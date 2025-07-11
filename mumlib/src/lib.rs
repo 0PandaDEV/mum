@@ -70,7 +70,7 @@ pub fn setup_logger<T: Into<fern::Output>>(target: T, color: bool) {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
+        .level(LevelFilter::Debug)
         .chain(target.into())
         .apply()
         .unwrap();

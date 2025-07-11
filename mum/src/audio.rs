@@ -4,7 +4,6 @@
 
 pub mod input;
 pub mod output;
-pub mod sound_effects;
 pub mod transformers;
 
 use crate::error::AudioError;
@@ -15,7 +14,6 @@ use futures_util::stream::Stream;
 use futures_util::StreamExt;
 use mumble_protocol::voice::{VoicePacket, VoicePacketPayload};
 use mumble_protocol::Serverbound;
-use mumlib::config::SoundEffect;
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
@@ -23,7 +21,6 @@ use tokio::sync::watch;
 
 use self::input::{AudioInputDevice, DefaultAudioInputDevice};
 use self::output::{AudioOutputDevice, ClientStream, DefaultAudioOutputDevice};
-use self::sound_effects::NotificationEvents;
 
 /// The sample rate used internally.
 const SAMPLE_RATE: u32 = 48000;
@@ -102,34 +99,23 @@ pub struct AudioOutput {
     ///
     /// Shared with [DefaultAudioOutputDevice].
     client_streams: Arc<Mutex<ClientStream>>,
-
-    /// Which sound effect should be played on an event.
-    sounds: HashMap<NotificationEvents, Vec<f32>>,
 }
 
 impl AudioOutput {
     pub fn new(output_volume: f32) -> Result<Self, AudioError> {
-        let user_volumes = Arc::new(std::sync::Mutex::new(HashMap::new()));
+        let user_volumes = Arc::new(Mutex::new(HashMap::new()));
 
         let default = DefaultAudioOutputDevice::new(output_volume, Arc::clone(&user_volumes))?;
         default.play()?;
 
         let client_streams = default.client_streams();
 
-        let mut res = Self {
+        let res = Self {
             device: default,
-            sounds: HashMap::new(),
             client_streams,
             user_volumes,
         };
-        res.load_sound_effects(&[]);
         Ok(res)
-    }
-
-    /// Sets the sound effects according to some overrides, using some default
-    /// value if an event isn't overriden.
-    pub fn load_sound_effects(&mut self, overrides: &[SoundEffect]) {
-        self.sounds = sound_effects::load_sound_effects(overrides, self.device.num_channels());
     }
 
     /// Decodes a voice packet.
@@ -172,14 +158,5 @@ impl AudioOutput {
                 entry.insert((1.0, mute));
             }
         }
-    }
-
-    /// Queues a sound effect.
-    pub fn play_effect(&self, effect: NotificationEvents) {
-        let samples = self.sounds.get(&effect).unwrap();
-        self.client_streams
-            .lock()
-            .unwrap()
-            .add_sound_effect(samples);
     }
 }

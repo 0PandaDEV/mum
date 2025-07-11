@@ -2,7 +2,7 @@ pub mod channel;
 pub mod server;
 pub mod user;
 
-use crate::audio::{sound_effects::NotificationEvents, AudioInput, AudioOutput};
+use crate::audio::{AudioInput, AudioOutput};
 use crate::error::StateError;
 use crate::network::tcp::{DisconnectedReason, TcpEvent, TcpEventData};
 use crate::network::{ConnectionInfo, VoiceStreamType};
@@ -166,8 +166,6 @@ impl State {
                                         channel.name().to_owned(),
                                     ));
                                 }
-                                self.audio_output
-                                    .play_effect(NotificationEvents::UserLeftChannel);
                             } else if to_channel == this_channel {
                                 // User moved from somewhere else to our channel
                                 if let Some(channel) = s.channels().get(&from_channel) {
@@ -181,8 +179,6 @@ impl State {
                                         channel.name().to_owned(),
                                     ));
                                 }
-                                self.audio_output
-                                    .play_effect(NotificationEvents::UserJoinedChannel);
                             }
                         }
 
@@ -219,8 +215,6 @@ impl State {
                                 msg.get_name().to_string(),
                                 this_channel_name,
                             ));
-                            self.audio_output
-                                .play_effect(NotificationEvents::UserConnected);
                         }
                     }
                 }
@@ -257,8 +251,6 @@ impl State {
                         .to_owned();
                     notifications::send(format!("{} disconnected", user_name));
                     events.push(MumbleEventKind::UserDisconnected(user_name, channel_name));
-                    self.audio_output
-                        .play_effect(NotificationEvents::UserDisconnected);
                 }
 
                 s.user_remove(msg);
@@ -292,14 +284,6 @@ impl State {
         {
             self.audio_output.set_volume(output_volume);
         }
-        if let Some(sound_effects) = self
-            .config
-            .audio
-            .as_ref()
-            .and_then(|audio| audio.sound_effects.as_ref())
-        {
-            self.audio_output.load_sound_effects(sound_effects);
-        }
     }
 
     pub fn register_message(&mut self, msg: (String, u32)) {
@@ -313,8 +297,6 @@ impl State {
 
     pub fn initialized(&self) {
         self.broadcast_phase(StatePhase::Connected(VoiceStreamType::Tcp));
-        self.audio_output
-            .play_effect(NotificationEvents::ServerConnect);
     }
 
     /// Store a new event
@@ -386,7 +368,7 @@ pub fn handle_command(
     connection_info_sender: &mut watch::Sender<Option<ConnectionInfo>>,
 ) -> ExecutionContext {
     // re-borrow to please borrowck
-    let mut state = &mut *og_state.write().unwrap();
+    let state = &mut *og_state.write().unwrap();
     match command {
         Command::ChannelJoin { channel_identifier } => {
             if let Server::Connected(s) = state.server() {
@@ -420,7 +402,6 @@ pub fn handle_command(
         }
         Command::DeafenSelf(toggle) => {
             if let Server::Connected(server) = &mut state.server {
-                let audio_output = &mut state.audio_output;
                 let action = match (toggle, server.muted(), server.deafened()) {
                     (Some(false), false, false) => None,
                     (Some(false), false, true) => Some((false, false)),
@@ -438,19 +419,6 @@ pub fn handle_command(
 
                 let mut new_deaf = None;
                 if let Some((mute, deafen)) = action {
-                    if server.deafened() != deafen {
-                        audio_output.play_effect(if deafen {
-                            NotificationEvents::Deafen
-                        } else {
-                            NotificationEvents::Undeafen
-                        });
-                    } else if server.muted() != mute {
-                        audio_output.play_effect(if mute {
-                            NotificationEvents::Mute
-                        } else {
-                            NotificationEvents::Unmute
-                        });
-                    }
                     let mut msg = msgs::UserState::new();
                     if server.muted() != mute {
                         msg.set_self_mute(mute);
@@ -529,7 +497,6 @@ pub fn handle_command(
         }
         Command::MuteSelf(toggle) => {
             if let Server::Connected(server) = &mut state.server {
-                let audio_output = &mut state.audio_output;
                 let action = match (toggle, server.muted(), server.deafened()) {
                     (Some(false), false, false) => None,
                     (Some(false), false, true) => Some((false, false)),
@@ -547,19 +514,6 @@ pub fn handle_command(
 
                 let mut new_mute = None;
                 if let Some((mute, deafen)) = action {
-                    if server.deafened() != deafen {
-                        audio_output.play_effect(if deafen {
-                            NotificationEvents::Deafen
-                        } else {
-                            NotificationEvents::Undeafen
-                        });
-                    } else if server.muted() != mute {
-                        audio_output.play_effect(if mute {
-                            NotificationEvents::Mute
-                        } else {
-                            NotificationEvents::Unmute
-                        });
-                    }
                     let mut msg = msgs::UserState::new();
                     if server.muted() != mute {
                         msg.set_self_mute(mute);
@@ -659,10 +613,6 @@ pub fn handle_command(
                     .0
                     .send(StatePhase::Disconnected)
                     .unwrap();
-
-                state
-                    .audio_output
-                    .play_effect(NotificationEvents::ServerDisconnect);
                 now!(Ok(None))
             } else {
                 now!(Err(Error::Disconnected))

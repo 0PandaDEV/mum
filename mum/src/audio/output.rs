@@ -203,7 +203,7 @@ impl DefaultAudioOutputDevice {
             .with_sample_rate(sample_rate);
         let output_supported_sample_format = output_supported_config.sample_format();
         let output_config: StreamConfig = output_supported_config.into();
-        let client_streams = Arc::new(std::sync::Mutex::new(ClientStream::new(
+        let client_streams = Arc::new(Mutex::new(ClientStream::new(
             sample_rate.0,
             output_config.channels,
         )));
